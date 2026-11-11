@@ -1,78 +1,95 @@
-# 示例插件：nginx 显示一个网页，向登录的人问好。改成自己的应用见 https://github.com/wontonapp/wonton-docs/blob/main/develop.md#写插件。
 services:
-  web:
-    # 镜像按摘要固定（多架构镜像写清单列表的摘要），标签只给人看。
-    image: nginx:1.31.8-alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+  grocy:
+    # 上游官方打包（LinuxServer.io），按清单列表摘要固定；标签写具体版本，仅给人看。
+    image: lscr.io/linuxserver/grocy:4.7.1@sha256:e4e34a0a84f407b1bcd2c3b6cd1999bf99bcad1defa8847adea7dc82a9cd6b8c
+    # 镜像以 root 起 s6 再降权到 PUID/PGID，数据目录属主规则按"没写 user"处理，不写 user。
     environment:
-      # 网关代登录：SSI 回显的 Remote-User 只信核心带来的。官方镜像启动时对 templates 目录里的
-      # *.template 做 envsubst，把下面的地址换进 nginx 配置（见 web/default.conf.template）。
-      WONTON_CORE_ADDRESS: ${WONTON_CORE_ADDRESS}
-    # 包里的文件经 configs 交给容器（核心在启动前写进去），不能用卷挂载。
-    configs:
-      - source: site
-        target: /etc/nginx/templates/default.conf.template
-      - source: page
-        target: /usr/share/nginx/html/index.html
-      - source: tokens
-        target: /usr/share/nginx/html/tokens.css
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      # grocy 的设置可用 GROCY_<设置名> 环境变量覆盖 config.php（优先级在 settingoverrides 之下），
+      # 见上游 config-dist.php 头注释和 helpers/extensions.php 的 Setting()。
+      # 代登录：网关认出用户后在请求上带 Remote-User，grocy 按它认人、没有的用户自动建号；
+      # 类名是 Grocy\Middleware\Auth\ReverseProxyAuthMiddleware（上游 config-dist.php）。
+      GROCY_AUTH_CLASS: Grocy\Middleware\Auth\ReverseProxyAuthMiddleware
+      GROCY_REVERSE_PROXY_AUTH_HEADER: Remote-User
+      GROCY_DEFAULT_LOCALE: zh_CN
+      GROCY_CURRENCY: CNY
+      # 联网条码查询默认指向 Open Food Facts，由容器服务端出网请求；本插件不出网（见 README），
+      # 置空关掉，避免用户扫到未知条码时看到难懂的连接错误。应用内扫码和已录商品不受影响。
+      GROCY_STOCK_BARCODE_LOOKUP_PLUGIN: ""
+    volumes:
+      # grocy 全部数据（SQLite、配置、上传文件）在 /config 下。
+      - ${WONTON_APP_DATA}/config:/config
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      # /login 是公开路由（BaseAuthMiddleware 对 root/login 豁免），走完 nginx→php-fpm→数据库，
+      # 不需要也不注入用户身份（健康检查带身份头反而会在数据库里建号）。
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1/login"]
       interval: 30s
       timeout: 5s
-      start_period: 30s
-      start_interval: 1s
-
-configs:
-  site:
-    file: web/default.conf.template
-  page:
-    file: web/index.html
-  tokens:
-    file: web/tokens.css
+      start_period: 60s
+      start_interval: 2s
 
 x-wonton:
   spec: "0.6"
-  # 换成你自己的：反向域名形式，装上以后不能改。
-  id: app.example.hello
-  version: 0.1.1
+  id: info.grocy.grocy
+  version: 0.1.0
   kind: app
-  title: { zh: 你好, en: Hello }
-  description: { zh: 向登录的人问好的示例网页, en: An example page that greets whoever is signed in }
-  icon: icon.svg
+  title: { zh: 家庭库存（grocy）, en: Home Inventory (grocy) }
+  description:
+    zh: "管家里的东西还剩多少、什么时候过期：食品保质期、购物清单和家务提醒，像给厨房配了本账。"
+    en: "Keep track of what's in your home: food expiry dates, shopping lists and chores, like a ledger for your kitchen."
+  icon: icon.png
   notices: [NOTICE]
-  screenshots: [screenshots/home.png]
-  author: { name: Example }
-  homepage: https://nginx.org
-  # 应用（这里是 nginx）的许可证；插件包自己的许可证写在仓库的 LICENSE 里。
-  license: BSD-2-Clause
+  screenshots: [screenshots/home.png, screenshots/shopping-list.png]
+  author: { name: geraldpeng6 }
+  homepage: https://grocy.info
+  # 应用（grocy）的许可证；插件包自己的许可证写在 LICENSE 里。
+  license: MIT
   tags:
-    zh: [工具]
-    en: [Tools]
+    zh: [工具, 效率]
+    en: [Tools, Productivity]
   about:
     zh: |
-      一个示例网页：登录以后，页面会向你问好。新建插件时可以照着改。
+      家里的东西买了几包、放到哪、哪天到期，记在这里就不会忘：库存快见底或快过期时，首页一眼看到；购物清单和家务安排也在同一个页面里。
+
+      登录走云吞：打开就是自己的账号，不用再注册或输密码。家人共用同一份库存，各人用自己的名字进来。
+
+      网上查条码自动填商品信息的功能用不了（它要把条码发给 Open Food Facts，本插件不开外网），扫条码建商品仍然可以，信息自己填。
+
+      装好后应用里会看到一个叫 admin 的内置账号，那是 grocy 出厂自带的；在这种登录方式下它登不进来，也没有密码入口，放着不动它。
     en: |
-      An example page: once you are signed in, the page says hello. Copy it as a starting point for a new plugin.
-  release_notes: { zh: 名字和说明更新。, en: Product name and description update. }
+      Track what you have at home, where it is and when it expires: the front page shows what's running low or past its date, and shopping lists and chores live in the same place.
+
+      Sign-in goes through Wonton: opening the app is enough, no extra registration or password. The household shares one inventory; everyone comes in under their own name.
+
+      Looking up unknown barcodes online doesn't work here (it would send barcodes to Open Food Facts; this plugin has no internet access). Scanning barcodes still works — just fill in the product details yourself.
+
+      The app ships a built-in account named admin; under this sign-in method it cannot be logged into and has no password entrance. It can stay untouched.
+  release_notes: { zh: 首个版本。, en: First release. }
   webui:
-    service: web
+    service: grocy
     port: 80
-    # 示例页回显网关注入的用户名，见 https://github.com/wontonapp/wonton-docs/blob/main/plugin-spec.md#网关代登录sso-proxy。
+    # 网关代登录：见 https://github.com/wontonapp/wonton-docs/blob/main/plugin-spec.md#网关代登录sso-proxy。
+    # 插件不出网、不开局域网端口，能到达 grocy 的只有核心网关和本插件容器，Remote-User 头只可能来自网关。
     sso: proxy
     proxy:
       headers:
         Remote-User: "{user}"
-  # 能放进侧边栏“我的应用”的页面，见 https://github.com/wontonapp/wonton-docs/blob/main/plugin-spec.md#应用页面tabs。放不放由用户决定。
+  # 放进侧边栏"我的应用"的常用页；grocy 是响应式页面，未做 App 适配，用默认 inset。
   tabs:
-    - id: home
-      title: { zh: 主页, en: Home }
-      icon: tabs/home.svg
-      icon_selected: tabs/home-fill.svg
-      path: /
-      # 这个页面没做适配，用默认的 inset：从状态栏下沿开始，页面不用管安全区。
-      # 想让内容从状态栏后面滚过，写 layout: edge-to-edge，并用 --wonton-inset-* 留出系统安全区的位置。
+    - id: stock
+      title: { zh: 库存, en: Stock }
+      icon: tabs/stock.svg
+      icon_selected: tabs/stock-fill.svg
+      path: /stock
+    - id: shoppinglist
+      title: { zh: 购物清单, en: Shopping }
+      icon: tabs/shoppinglist.svg
+      icon_selected: tabs/shoppinglist-fill.svg
+      path: /shoppinglist
   permissions: []
-  # 上游 nginx 官方镜像，amd64 和 arm64 都有；上游没写最低内存，按本机空闲实测取整（实测约 24M，取 64M）。
+  # 上游没写最低内存；装起来后按空闲实测取整。
   requirements:
     arch: [amd64, arm64]
-    memory: 64M
+    memory: 128M

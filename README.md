@@ -1,43 +1,33 @@
-# 云吞插件模板
+# 家庭库存（grocy）
 
-开发流程见[插件开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
+家里的东西还剩多少、什么时候过期、要买什么、家务谁做——grocy（[上游项目](https://grocy.info)）把这些记在一处：保质期、库存、购物清单、家务和日历。装好后打开就是自己的账号，不用再注册。
 
-这是一个能安装的示例插件 `app.example.hello`：使用 nginx 官方镜像显示问候页，经网关的 `sso: proxy` 注入用户名，页面显示“你好，<用户名>”。示例没有应用账号、持久化数据或 MCP 工具。
+## 登录
 
-## 示例文件
+打开插件网页时由云吞代为登录：云吞把你的用户名带给 grocy，第一次访问时 grocy 自动用它建号。家人共用同一份库存，各人用自己的名字进来。
 
-| 路径 | 内容 |
-| --- | --- |
-| `docker-compose.yml` | 示例清单、nginx 服务和三个 `configs` |
-| `web/default.conf.template` | nginx 配置，启用 SSI 回显用户名并提供健康检查入口；只放行来自核心地址（`${WONTON_CORE_ADDRESS}`）的请求，其余来源 403 |
-| `web/index.html` | 问候页 |
-| `web/tokens.css` | 页面主题变量的后备值 |
-| `tabs/` | 示例主页的应用页面图标 |
-| `screenshots/home.png` | 商店详情页的示例截图 |
-| `scripts/smoke-probes.sh` | 检查真实页面和网关注入身份的插件探针 |
+grocy 出厂自带的内置账号 `admin`（密码 `admin`）在这种登录方式下登不进来（登录接口不可用，也没有 API key 入口），放着不动即可。
 
-从模板创建自己的插件后，替换示例清单、网页和素材；具体步骤见[写插件](https://github.com/wontonapp/wonton-docs/blob/main/develop.md#写插件)。
+## 数据在哪
 
-## 对着别的栈跑探针
+全部数据（SQLite 数据库、配置、上传的图片）在插件数据目录的 `config/` 子目录（容器内 `/config`）。备份、随插件卸载删除都走云吞的插件数据目录。
 
-`probes`、`api`、`session` 按 `.wonton/.env` 的 `WONTON_BASE_DOMAIN` 拼核心地址，`up` 起的栈自己写这个键。插件装进别人的栈、或者对着已有环境排查时，把那套栈的基础域名写进 `.wonton/.env`，不要只按实例名猜地址：实例名只是资源名前缀，网关按 Host 认域名，拼错了会回“没有安装”。
+## 需要外网的功能
 
-```bash
-WONTON_BASE_DOMAIN=wonton.localhost
-```
+没有。联网查条码自动填商品信息的功能要把条码发给 Open Food Facts，本插件不开外网，已把它关闭：扫条码仍可以，商品信息自己填。其余功能（库存、保质期、购物清单、家务、日历）完全本地。
 
-## 核心镜像
+## 和云吞家人名单的关系
 
-检查和冒烟默认用套件里的核心镜像（`ghcr.io/wontonapp/wonton-core:main`）；要固定别的核心镜像，在仓库 Settings → Variables 设 `WONTON_CORE_IMAGE`，手动触发“检查”时填的 `core-image` 输入优先。
+能打开这个插件网页的家人都会以自己的用户名在 grocy 里建号，看到并共享同一份库存。不想让家人用，就不分享这个插件。
 
-## 更新开发套件
+## 已知限制
 
-```bash
-scripts/dev.sh kit-update
-```
+- grocy 网页没有为手机做过原生适配，竖屏可用但不是 App 的原生界面。
+- 没有 MCP 工具：grocy 只提供 REST API（`/api`，应用内可生成 API key），Agent 想查库存要等底座支持 REST 接入。
+- 上游镜像由 LinuxServer.io 打包，随其发布节奏更新；见 [NOTICE](NOTICE)。
 
-在从模板新建的插件仓库中更新套件；本仓库是套件源头，执行时只提示并退出。版本、可选引用和自定义脚本约定见[开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md#更新开发套件)。
+## 开发
 
-## 图标
+从模板新建、开发环境、检查与发布的通用流程见[插件开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
 
-`icon.svg` 是本仓库原创线条图标，按本仓库 MIT 许可证分发，见 [NOTICE](NOTICE)。
+图标说明见 [NOTICE](NOTICE)。
